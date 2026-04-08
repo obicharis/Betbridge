@@ -128,7 +128,67 @@ app.get('/api/stake-to-sportybet', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
-// GET /api/debug-sportybet?code=HZL7U2
+// POST /api/resolve
+// Browser fetches raw data from SportyBet/Stake directly,
+// then sends it here for normalisation + cross-platform matching
+// ─────────────────────────────────────────────────────────
+app.post('/api/resolve', async (req, res) => {
+  const { platform, country, raw } = req.body;
+  if (!platform || !raw) return res.status(400).json({ error: 'platform and raw are required' });
+
+  try {
+    if (platform === 'sportybet') {
+      const normalised = sportybet.normalise(raw);
+      const resolution = await sportyBetToStake(normalised);
+      return res.json({
+        success: true,
+        betslip: normalised,
+        resolution: {
+          deeplink:      resolution.deeplink,
+          matchRate:     resolution.matchRate,
+          avgConfidence: resolution.avgConfidence,
+          selections:    resolution.resolved.map(s => ({
+            eventName: s.eventName, homeTeam: s.homeTeam, awayTeam: s.awayTeam,
+            market: s.market, selection: s.selection, odds: s.odds,
+            startTime: s.startTime,
+            status: s.matchStatus, confidence: s.matchConfidence,
+            note: s.matchNote, targetOutcomeId: s.targetOutcomeId,
+          })),
+        },
+        targetPlatform: 'stake',
+      });
+    }
+
+    if (platform === 'stake') {
+      const normalised = stake.normalise(raw);
+      const resolution = await stakeTosportyBet(normalised, country || 'ng');
+      return res.json({
+        success: true,
+        betslip: normalised,
+        resolution: {
+          deeplink:      resolution.deeplink,
+          matchRate:     resolution.matchRate,
+          avgConfidence: resolution.avgConfidence,
+          selections:    resolution.resolved.map(s => ({
+            eventName: s.eventName, homeTeam: s.homeTeam, awayTeam: s.awayTeam,
+            market: s.market, selection: s.selection, odds: s.odds,
+            startTime: s.startTime,
+            status: s.matchStatus, confidence: s.matchConfidence,
+            note: s.matchNote, targetOutcomeId: s.targetOutcomeId,
+          })),
+        },
+        targetPlatform: 'sportybet',
+      });
+    }
+
+    return res.status(400).json({ error: 'Unknown platform' });
+  } catch (err) {
+    console.error('[resolve]', err);
+    return res.status(500).json({ error: 'Server error during matching.' });
+  }
+});
+
+
 // ─────────────────────────────────────────────────────────
 app.get('/api/debug-sportybet', async (req, res) => {
   const code = (req.query.code || '').trim().toUpperCase();
