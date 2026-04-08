@@ -158,8 +158,49 @@ app.get('/api/debug-sportybet', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
-// GET /api/health
+// GET /api/debug-stake?id=553208986
+// Tries multiple GraphQL queries to find the right one
 // ─────────────────────────────────────────────────────────
+app.get('/api/debug-stake', async (req, res) => {
+  const id = (req.query.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id required' });
+
+  const fetch = require('node-fetch');
+  const GQL = 'https://stake.com/_api/graphql';
+  const headers = {
+    'Content-Type': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
+    'Accept': 'application/json',
+    'Origin': 'https://stake.com',
+    'Referer': 'https://stake.com/',
+  };
+
+  const queries = {
+    bet: `query { bet(id:"${id}") { id type totalOdds bets { id odds outcome { id name } market { id name } fixture { id name home { name } away { name } } } } }`,
+    multiBet: `query { multiBet(id:"${id}") { id type totalOdds bets { id odds outcome { id name } market { id name } fixture { id name home { name } away { name } } } } }`,
+    sportBet: `query { sportBet(id:"${id}") { id type totalOdds bets { id odds outcome { id name } market { id name } fixture { id name home { name } away { name } } } } }`,
+    shareBet: `query { shareBet(shareCode:"${id}") { id type totalOdds bets { id odds outcome { id name } market { id name } fixture { id name home { name } away { name } } } } }`,
+  };
+
+  const results = {};
+  for (const [name, query] of Object.entries(queries)) {
+    try {
+      const r = await fetch(GQL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query }),
+        timeout: 8000,
+      });
+      const data = await r.json();
+      results[name] = { status: r.status, data };
+    } catch (e) {
+      results[name] = { error: e.message };
+    }
+  }
+  return res.json(results);
+});
+
+
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', ts: Date.now() }));
 
