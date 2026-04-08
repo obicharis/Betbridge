@@ -685,6 +685,242 @@
     currentDir = dir;
     document.getElementById('btn-sb-st').classList.toggle('active', dir === 'sb-st');
     document.getElementById('btn-st-sb').classList.toggle('active', dir === 'st-sb');
+    const input = document.getElementById('code-input');
+    const label = document.getElementById('input-label');
+    const hint  = document.getElementById('hint-text');
+    if (dir === 'sb-st') {
+      label.textContent = 'SportyBet Share Code';
+      input.placeholder = 'e.g. HZL7U2';
+      hint.textContent  = 'Paste your SportyBet share code above';
+    } else {
+      label.textContent = 'Stake Share Link';
+      input.placeholder = 'https://stake.com/sports/home?iid=sport%3A...';
+      hint.textContent  = 'Paste your full Stake share link above';
+    }
+    document.getElementById('result-card').classList.remove('visible');
+    document.getElementById('error-box').classList.remove('visible');
+    input.value = '';
+  }
+
+  // ── SPORTYBET: fetch directly from browser ──
+  async function fetchSportyBet(code) {
+    const countries = ['ng', 'gh', 'ke', 'za', 'tz', 'ug', 'et'];
+    const ts = Date.now();
+    for (const c of countries) {
+      try {
+        const url = `https://www.sportybet.com/api/${c}/orders/share?shareCode=${encodeURIComponent(code.toUpperCase())}&_time=${ts}`;
+        const r = await fetch(url, {
+          headers: { 'Accept': 'application/json', 'Referer': `https://www.sportybet.com/${c}/` }
+        });
+        if (!r.ok) continue;
+        const d = await r.json();
+        if (d?.bizCode === 0 && d.data) return { country: c, raw: d.data };
+        if (d?.data?.betInfo || d?.betInfo) return { country: c, raw: d.data || d };
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  // ── STAKE: fetch GraphQL directly from browser ──
+  async function fetchStake(link) {
+    // Extract bet ID from iid=sport%3A<id>
+    const iidMatch = link.match(/[?&]iid=sport(?:%3A|:)(\d+)/i);
+    const scMatch  = link.match(/[?&]shareCode=([^&]+)/i);
+    const pathMatch = link.match(/\/(?:bets\/)?share\/([^/?&]+)/i);
+
+    let betId = null, shareCode = null;
+    if (iidMatch) betId = iidMatch[1];
+    else if (scMatch) shareCode = decodeURIComponent(scMatch[1]);
+    else if (pathMatch) shareCode = pathMatch[1];
+    else shareCode = link.trim();
+
+    const GQL = 'https://stake.com/_api/graphql';
+    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+
+    if (betId) {
+      // Try bet → multiBet → sportBet
+      const queries = [
+        [`bet`,      `query { bet(id:"${betId}") { id type totalOdds bets { id odds outcome{id name} market{id name} fixture{id name slug startTime tournament{name slug} sport{name slug} home{name} away{name}} } } }`],
+        [`multiBet`, `query { multiBet(id:"${betId}") { id type totalOdds bets { id odds outcome{id name} market{id name} fixture{id name slug startTime tournament{name slug} sport{name slug} home{name} away{name}} } } }`],
+        [`sportBet`, `query { sportBet(id:"${betId}") { id type totalOdds bets { id odds outcome{id name} market{id name} fixture{id name slug startTime tournament{name slug} sport{name slug} home{name} away{name}} } } }`],
+      ];
+      for (const [key, query] of queries) {
+        try {
+          const r = await fetch(GQL, { method:'POST', headers, body: JSON.stringify({query}) });
+          const d = await r.json();
+          if (d?.data?.[key]) return { raw: d.data[key] };
+        } catch (_) {}
+      }
+    }
+
+    if (shareCode) {
+      const query = `query { shareBet(shareCode:"${shareCode}") { id type totalOdds bets { id odds outcome{id name} market{id name} fixture{id name slug startTime tournament{name slug} sport{name slug} home{name} away{name}} } } }`;
+      try {
+        const r = await fetch(GQL, { method:'POST', headers, body: JSON.stringify({query}) });
+        const d = await r.json();
+        if (d?.data?.shareBet) return { raw: d.data.shareBet };
+      } catch (_) {}
+    }
+
+    return null;
+  }
+
+  // ── MAIN CONVERT ──
+  async function convert() {
+    const code = document.getElementById('code-input').value.trim();
+    if (!code) { showError('Please paste a share code or link first.'); return; }
+
+    setLoading(true); hideResult(); hideError();
+
+    try {
+      let rawBetslip = null;
+
+      if (currentDir === 'sb-st') {
+        setLoadingMsg('Fetching from SportyBet…');
+        const fetched = await fetchSportyBet(code);
+        if (!fetched) {
+          showError('Could not fetch SportyBet slip. Make sure the code is correct and not expired.');
+          return;
+        }
+        rawBetslip = { platform: 'sportybet', country: fetched.country, raw: fetched.raw };
+      } else {
+        setLoadingMsg('Fetching from Stake…');
+        const fetched = await fetchStake(code);
+        if (!fetched) {
+          showError('Could not fetch Stake slip. Make sure you pasted the full share link.');
+          return;
+        }
+        rawBetslip = { platform: 'stake', raw: fetched.raw };
+      }
+
+      // Send raw data to our server for normalisation + matching
+      setLoadingMsg('Matching selections…');
+      const res = await fetch('/api/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rawBetslip),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        showError(data.error || 'Matching failed. Please try again.');
+        return;
+      }
+
+      showResult(data);
+    } catch (err) {
+      showError('Network error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function showResult(data) {
+    const { betslip, resolution, targetPlatform } = data;
+    const sel = resolution?.selections || betslip.selections;
+    const deeplink = resolution?.deeplink || null;
+    const matchRate = resolution?.matchRate ?? 1;
+    const matchedCount = resolution ? sel.filter(s => s.status === 'matched').length : sel.length;
+
+    document.getElementById('result-title').textContent =
+      `${sel.length} Selection${sel.length !== 1 ? 's' : ''} · ${(betslip.betType||'combo').toUpperCase()}`;
+    document.getElementById('total-odds').textContent =
+      betslip.totalOdds ? `x${Number(betslip.totalOdds).toFixed(2)}` : '–';
+
+    if (resolution) {
+      document.getElementById('match-bar').style.display = '';
+      const pct = Math.round(matchRate * 100);
+      const cls = pct === 100 ? 'full' : pct >= 50 ? 'partial' : 'low';
+      document.getElementById('match-rate-text').textContent = `${matchedCount}/${sel.length}`;
+      document.getElementById('match-rate-text').className = `match-rate ${cls}`;
+      const fill = document.getElementById('progress-fill');
+      fill.style.width = pct + '%';
+      fill.className = `progress-fill ${cls}`;
+    }
+
+    const list = document.getElementById('selections-list');
+    list.innerHTML = '';
+    sel.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'sel-item';
+      const eventDisplay = s.homeTeam && s.awayTeam ? `${s.homeTeam} vs ${s.awayTeam}` : s.eventName || 'Unknown Event';
+      const time = s.startTime ? new Date(s.startTime).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+      const status = s.status || 'matched';
+      const dotCls = status === 'matched' ? 'matched' : (status === 'event_not_found' || status === 'unmatched') ? 'unmatched' : 'partial';
+      div.innerHTML = `
+        <div class="status-dot ${dotCls}"></div>
+        <div class="sel-event">${escHtml(eventDisplay)}</div>
+        <div class="sel-market">${escHtml(s.market||'')}${time ? ' · '+time : ''}</div>
+        <div class="sel-odds">${s.odds ? Number(s.odds).toFixed(2) : '–'}</div>
+        ${s.selection ? `<span class="sel-pick">${escHtml(s.selection)}</span>` : ''}
+        ${s.note ? `<div class="sel-match-note ${status==='matched'?'ok':''}">${escHtml(s.note)}</div>` : ''}
+      `;
+      list.appendChild(div);
+    });
+
+    currentTargetLink = deeplink || '';
+    const linkEl = document.getElementById('target-link');
+    if (deeplink) {
+      linkEl.href = deeplink;
+      linkEl.style.display = '';
+      document.getElementById('target-link-text').textContent =
+        (targetPlatform === 'stake' ? 'Open Stake.com' : 'Open SportyBet') + ' →';
+    } else {
+      linkEl.style.display = 'none';
+    }
+
+    document.getElementById('action-label').textContent =
+      targetPlatform === 'stake' ? 'Continue on Stake' : 'Continue on SportyBet';
+
+    const noteEl = document.getElementById('note-box');
+    if (resolution && matchedCount < sel.length) {
+      noteEl.innerHTML = `<strong>${matchedCount}/${sel.length}</strong> matched automatically. <strong>${sel.length - matchedCount}</strong> need manual adding. 🟢 = auto-added.`;
+    } else if (resolution && matchedCount === sel.length) {
+      noteEl.innerHTML = `<strong>All ${sel.length} selections matched!</strong> Click the link to open your pre-filled betslip.`;
+    } else {
+      noteEl.innerHTML = 'Use the selections list to recreate your bet on the other platform.';
+    }
+
+    document.getElementById('result-card').classList.add('visible');
+    document.getElementById('result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function copyLink() {
+    if (!currentTargetLink) return;
+    navigator.clipboard.writeText(currentTargetLink).then(() => {
+      const btn = document.getElementById('copy-btn');
+      btn.classList.add('copied');
+      btn.innerHTML = '<span>✓</span> Copied!';
+      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '<span>📋</span> Copy'; }, 2000);
+    });
+  }
+
+  function setLoading(on) {
+    document.getElementById('loader').classList.toggle('visible', on);
+    document.getElementById('convert-btn').disabled = on;
+    if (!on) document.getElementById('convert-btn').textContent = 'Convert';
+  }
+  function setLoadingMsg(msg) {
+    const l = document.getElementById('loader');
+    l.innerHTML = `<div class="spinner"></div>${msg}`;
+    l.classList.add('visible');
+  }
+  function hideResult() { document.getElementById('result-card').classList.remove('visible'); }
+  function showError(msg) {
+    const box = document.getElementById('error-box');
+    box.textContent = '⚠ ' + msg;
+    box.classList.add('visible');
+  }
+  function hideError() { document.getElementById('error-box').classList.remove('visible'); }
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+
+  function setDir(dir) {
+    currentDir = dir;
+    document.getElementById('btn-sb-st').classList.toggle('active', dir === 'sb-st');
+    document.getElementById('btn-st-sb').classList.toggle('active', dir === 'st-sb');
 
     const input = document.getElementById('code-input');
     const label = document.getElementById('input-label');
