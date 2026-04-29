@@ -1,274 +1,342 @@
 /**
- * server.js — BetBridge v2
- * Full deep-link resolution: SportyBet ↔ Stake
+ * BetBridge — Stake.com → SportyBet proxy server
+ *
+ * Flow:
+ *  1. User pastes a Stake.com bet slip share link (requires they placed a bet)
+ *  2. Server fetches the slip from Stake's GraphQL API
+ *  3. Server searches SportyBet for each matching event
+ *  4. Server generates a SportyBet booking code
+ *  5. User loads the code on SportyBet and places their own bet
  */
 
-const express  = require('express');
-const cors     = require('cors');
-const path     = require('path');
+require('dotenv').config();
 
-const sportybet  = require('./lib/sportybet');
-const stake      = require('./lib/stake');
-const { sportyBetToStake, stakeTosportyBet } = require('./lib/resolver');
+const express   = require('express');
+const cors      = require('cors');
+const helmet    = require('helmet');
+const morgan    = require('morgan');
+const rateLimit = require('express-rate-limit');
+const axios     = require('axios');
+const Fuse      = require('fuse.js');
+const path      = require('path');
 
-const app  = express();
-const PORT = process.env.PORT || 3000;
+const app     = express();
+const PORT    = process.env.PORT || 3000;
+const TIMEOUT = parseInt(process.env.REQUEST_TIMEOUT || '10000', 10);
 
+const USER_AGENT =
+  process.env.USER_AGENT ||
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+// ─────────────────────────────────────────────
+// Middleware
+// ─────────────────────────────────────────────
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json());
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+app.use('/api', rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
+  max:      parseInt(process.env.RATE_LIMIT_MAX       || '60',    10),
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'Too many requests. Please slow down.' },
+}));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─────────────────────────────────────────────────────────
-// POST /api/sportybet-to-stake
-// Body: { code: "SBNG1234" }
-// ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────
+const COUNTRY_SLUGS = {
+  ng: 'ng', gh: 'gh', ke: 'ke', tz: 'tz',
+  ug: 'ug', et: 'et', cm: 'cm', za: 'rsa', rsa: 'rsa',
+};
 
-app.get('/api/sportybet-to-stake', async (req, res) => {
-  const code = (req.query.code || '').trim();
-  if (!code) return res.status(400).json({ error: 'code is required' });
+const http = axios.create({
+  timeout: TIMEOUT,
+  headers: { 'User-Agent': USER_AGENT, Accept: 'application/json, */*' },
+});
 
+function sportyBase(country) {
+  const slug = COUNTRY_SLUGS[country?.toLowerCase()] || 'ng';
+  return `https://www.sportybet.com/api/${slug}`;
+}
+
+function sendError(res, status, message, details = null) {
+  const body = { error: message };
+  if (details && process.env.NODE_ENV !== 'production') body.details = details;
+  return res.status(status).json(body);
+}
+
+// ─────────────────────────────────────────────
+// Stake.com — GraphQL
+// ─────────────────────────────────────────────
+const STAKE_GQL = 'https://stake.com/_api/graphql';
+
+const BET_SLIP_QUERY = `
+  query BetSlip($id: String!) {
+    betSlip(id: $id) {
+      id active currency amount payout isCashout
+      bets {
+        id active odds amount payout status
+        outcome {
+          id name active
+          market {
+            id name active
+            game {
+              id name slug active startTime status
+              homeTeam { id name }
+              awayTeam { id name }
+              league   { id name country { id name code } }
+              sport    { id name slug }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+function parseStakeBetId(url) {
   try {
-    // 1. Fetch the share code
-    const fetched = await sportybet.fetchShareCode(code);
-    if (!fetched) {
-      return res.status(404).json({
-        error: 'Could not fetch SportyBet bet slip. Please check the share code.',
-      });
+    const u = new URL(url);
+    const m = u.pathname.match(/bet-slip\/([a-zA-Z0-9_-]+)/i);
+    if (m) return m[1];
+    return u.searchParams.get('betslipId') || u.searchParams.get('betslip') || null;
+  } catch { return null; }
+}
+
+async function fetchStakeSlip(betId) {
+  const resp = await http.post(
+    STAKE_GQL,
+    { operationName: 'BetSlip', variables: { id: betId }, query: BET_SLIP_QUERY },
+    { headers: { 'Content-Type': 'application/json', Origin: 'https://stake.com', Referer: 'https://stake.com/' } }
+  );
+  if (resp.data?.errors?.length) throw new Error(resp.data.errors[0]?.message || 'GraphQL error');
+  const slip = resp.data?.data?.betSlip;
+  if (!slip) throw new Error('Bet slip not found or is private');
+  return slip;
+}
+
+// ─────────────────────────────────────────────
+// SportyBet — search + match + booking code
+// ─────────────────────────────────────────────
+async function searchSportyEvents(country, keyword, sportId = 'sr:sport:1') {
+  const resp = await http.get(`${sportyBase(country)}/factsCenter/query`, {
+    params: { keyword, sportId, _t: Date.now() },
+    headers: { Referer: `https://www.sportybet.com/${COUNTRY_SLUGS[country] || country}/` },
+  });
+  return (
+    resp.data?.data?.sportEvents ||
+    resp.data?.data?.events      ||
+    resp.data?.sportEvents       ||
+    []
+  );
+}
+
+function fuzzyMatch(events, homeTeam, awayTeam) {
+  if (!events.length) return null;
+  const items = events.map(ev => ({
+    raw:   ev,
+    label: [
+      ev.homeTeamName || ev.homeName  || '',
+      ev.awayTeamName || ev.awayName  || '',
+      ev.eventName    || ev.fixtureName || '',
+    ].join(' ').toLowerCase(),
+  }));
+  const fuse = new Fuse(items, { keys: ['label'], threshold: 0.4, includeScore: true, ignoreLocation: true });
+  const hits = fuse.search(`${homeTeam} ${awayTeam}`.toLowerCase());
+  return hits[0]?.item?.raw || null;
+}
+
+function resolveOutcome(sportyEvent, pickName) {
+  const markets = sportyEvent.markets || sportyEvent.sportMarkets || [];
+  for (const mkt of markets) {
+    for (const oc of (mkt.outcomes || mkt.selections || [])) {
+      const name = (oc.outcomeName || oc.name || '').toLowerCase();
+      const pick = pickName.toLowerCase();
+      if (name === pick) return oc;
+      if (pick === '1'  && /^(home|1)$/.test(name))  return oc;
+      if (pick === '2'  && /^(away|2)$/.test(name))  return oc;
+      if (pick === 'x'  && /draw|^x$/.test(name))    return oc;
     }
-
-    // 2. Normalise
-    const normalised = sportybet.normalise(fetched.raw);
-
-    // 3. Resolve → Stake (deep matching)
-    const resolution = await sportyBetToStake(normalised);
-
-    return res.json({
-      success: true,
-      source: { platform: 'sportybet', country: fetched.country, code },
-      betslip: normalised,
-      resolution: {
-        deeplink:      resolution.deeplink,
-        matchRate:     resolution.matchRate,
-        avgConfidence: resolution.avgConfidence,
-        selections:    resolution.resolved.map(s => ({
-          // source info
-          eventName:   s.eventName,
-          homeTeam:    s.homeTeam,
-          awayTeam:    s.awayTeam,
-          market:      s.market,
-          selection:   s.selection,
-          odds:        s.odds,
-          // match result
-          status:      s.matchStatus,
-          confidence:  s.matchConfidence,
-          note:        s.matchNote,
-          targetOutcomeId: s.targetOutcomeId,
-        })),
-      },
-      targetPlatform: 'stake',
-    });
-  } catch (err) {
-    console.error('[sportybet-to-stake]', err);
-    return res.status(500).json({ error: 'Server error. Please try again.' });
   }
-});
+  return null;
+}
 
-// ─────────────────────────────────────────────────────────
-// GET /api/stake-to-sportybet
-// ─────────────────────────────────────────────────────────
+async function createSportyBookingCode(country, selectionsStr) {
+  const resp = await http.post(
+    `${sportyBase(country)}/factsCenter/bookingCode`,
+    { selectionsStr },
+    { headers: { 'Content-Type': 'application/json', Referer: `https://www.sportybet.com/${COUNTRY_SLUGS[country] || country}/` } }
+  );
+  const code = resp.data?.data?.bookingCode || resp.data?.bookingCode || null;
+  if (!code) throw new Error('SportyBet returned no booking code');
+  return code;
+}
 
-app.get('/api/stake-to-sportybet', async (req, res) => {
-  const code    = (req.query.code || '').trim();
-  const country = (req.query.country || 'ng').toLowerCase();
+// ─────────────────────────────────────────────
+// Routes
+// ─────────────────────────────────────────────
 
-  if (!code) return res.status(400).json({ error: 'code is required' });
+app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
+/**
+ * POST /api/convert
+ *
+ * Body:    { stakeUrl: string, country: string }
+ * Returns: { ok, bookingCode, totalOdds, matchedCount, unmatchedCount, selections, meta }
+ */
+app.post('/api/convert', async (req, res) => {
+  const { stakeUrl, country = 'ng' } = req.body;
+  if (!stakeUrl) return sendError(res, 400, 'Missing field: stakeUrl');
+
+  const betId = parseStakeBetId(stakeUrl);
+  if (!betId) return sendError(res, 400,
+    'Could not extract a bet slip ID from the URL. ' +
+    'Expected: https://stake.com/sports/bet-slip/<id>'
+  );
+
+  // 1. Fetch Stake slip
+  let slip;
   try {
-    // 1. Fetch
-    const fetched = await stake.fetchShareCode(code);
-    if (!fetched) {
-      return res.status(404).json({
-        error: 'Could not fetch Stake bet slip. Please check the share code or link.',
-      });
-    }
-
-    // 2. Normalise
-    const normalised = stake.normalise(fetched.raw);
-
-    // 3. Resolve → SportyBet
-    const resolution = await stakeTosportyBet(normalised, country);
-
-    return res.json({
-      success: true,
-      source: { platform: 'stake', code: fetched.code },
-      betslip: normalised,
-      resolution: {
-        deeplink:      resolution.deeplink,
-        matchRate:     resolution.matchRate,
-        avgConfidence: resolution.avgConfidence,
-        selections:    resolution.resolved.map(s => ({
-          eventName:   s.eventName,
-          homeTeam:    s.homeTeam,
-          awayTeam:    s.awayTeam,
-          market:      s.market,
-          selection:   s.selection,
-          odds:        s.odds,
-          status:      s.matchStatus,
-          confidence:  s.matchConfidence,
-          note:        s.matchNote,
-          targetOutcomeId: s.targetOutcomeId,
-        })),
-      },
-      targetPlatform: 'sportybet',
-    });
+    slip = await fetchStakeSlip(betId);
   } catch (err) {
-    console.error('[stake-to-sportybet]', err);
-    return res.status(500).json({ error: 'Server error. Please try again.' });
+    return sendError(res, 502, `Failed to fetch Stake bet slip: ${err.message}`, err.response?.data);
   }
-});
 
-// ─────────────────────────────────────────────────────────
-// POST /api/resolve
-// Browser fetches raw data from SportyBet/Stake directly,
-// then sends it here for normalisation + cross-platform matching
-// ─────────────────────────────────────────────────────────
-app.post('/api/resolve', async (req, res) => {
-  const { platform, country, raw } = req.body;
-  if (!platform || !raw) return res.status(400).json({ error: 'platform and raw are required' });
+  const stakeBets = slip.bets || [];
+  if (!stakeBets.length) return sendError(res, 404, 'Bet slip contains no selections');
 
-  try {
-    if (platform === 'sportybet') {
-      const normalised = sportybet.normalise(raw);
-      const resolution = await sportyBetToStake(normalised);
-      return res.json({
-        success: true,
-        betslip: normalised,
-        resolution: {
-          deeplink:      resolution.deeplink,
-          matchRate:     resolution.matchRate,
-          avgConfidence: resolution.avgConfidence,
-          selections:    resolution.resolved.map(s => ({
-            eventName: s.eventName, homeTeam: s.homeTeam, awayTeam: s.awayTeam,
-            market: s.market, selection: s.selection, odds: s.odds,
-            startTime: s.startTime,
-            status: s.matchStatus, confidence: s.matchConfidence,
-            note: s.matchNote, targetOutcomeId: s.targetOutcomeId,
-          })),
-        },
-        targetPlatform: 'stake',
-      });
-    }
+  // 2. Match each selection on SportyBet
+  const selections     = [];
+  const sportySelParts = [];
 
-    if (platform === 'stake') {
-      const normalised = stake.normalise(raw);
-      const resolution = await stakeTosportyBet(normalised, country || 'ng');
-      return res.json({
-        success: true,
-        betslip: normalised,
-        resolution: {
-          deeplink:      resolution.deeplink,
-          matchRate:     resolution.matchRate,
-          avgConfidence: resolution.avgConfidence,
-          selections:    resolution.resolved.map(s => ({
-            eventName: s.eventName, homeTeam: s.homeTeam, awayTeam: s.awayTeam,
-            market: s.market, selection: s.selection, odds: s.odds,
-            startTime: s.startTime,
-            status: s.matchStatus, confidence: s.matchConfidence,
-            note: s.matchNote, targetOutcomeId: s.targetOutcomeId,
-          })),
-        },
-        targetPlatform: 'sportybet',
-      });
-    }
-
-    return res.status(400).json({ error: 'Unknown platform' });
-  } catch (err) {
-    console.error('[resolve]', err);
-    return res.status(500).json({ error: 'Server error during matching.' });
-  }
-});
-
-
-// ─────────────────────────────────────────────────────────
-app.get('/api/debug-sportybet', async (req, res) => {
-  const code = (req.query.code || '').trim().toUpperCase();
-  if (!code) return res.status(400).json({ error: 'code required' });
-  const fetch = require('node-fetch');
-  const countries = ['ng', 'gh', 'ke', 'za'];
-  const results = {};
-  const ts = Date.now();
-  for (const country of countries) {
-    try {
-      const url = `https://www.sportybet.com/api/${country}/orders/share?shareCode=${encodeURIComponent(code)}&_time=${ts}`;
-      const r = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
-          'Accept': 'application/json',
-          'Referer': `https://www.sportybet.com/${country}/`,
-          'Origin': 'https://www.sportybet.com',
-        },
-        timeout: 6000,
-      });
-      results[country] = { status: r.status, body: await r.json().catch(() => 'non-JSON') };
-    } catch (e) {
-      results[country] = { error: e.message };
-    }
-  }
-  return res.json(results);
-});
-
-// ─────────────────────────────────────────────────────────
-// GET /api/debug-stake?id=553208986
-// Tries multiple GraphQL queries to find the right one
-// ─────────────────────────────────────────────────────────
-app.get('/api/debug-stake', async (req, res) => {
-  const id = (req.query.id || '').trim();
-  if (!id) return res.status(400).json({ error: 'id required' });
-
-  const fetch = require('node-fetch');
-  const GQL = 'https://stake.com/_api/graphql';
-  const headers = {
-    'Content-Type': 'application/json',
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
-    'Accept': 'application/json',
-    'Origin': 'https://stake.com',
-    'Referer': 'https://stake.com/',
+  const SPORT_ID_MAP = {
+    soccer: 'sr:sport:1', football: 'sr:sport:1',
+    basketball: 'sr:sport:2', tennis: 'sr:sport:5',
+    cricket: 'sr:sport:21', rugby: 'sr:sport:12',
   };
 
-  const queries = {
-    bet: `query { bet(id:"${id}") { id type totalOdds bets { id odds outcome { id name } market { id name } fixture { id name home { name } away { name } } } } }`,
-    multiBet: `query { multiBet(id:"${id}") { id type totalOdds bets { id odds outcome { id name } market { id name } fixture { id name home { name } away { name } } } } }`,
-    sportBet: `query { sportBet(id:"${id}") { id type totalOdds bets { id odds outcome { id name } market { id name } fixture { id name home { name } away { name } } } } }`,
-    shareBet: `query { shareBet(shareCode:"${id}") { id type totalOdds bets { id odds outcome { id name } market { id name } fixture { id name home { name } away { name } } } } }`,
-  };
+  for (const bet of stakeBets) {
+    const game      = bet.outcome?.market?.game;
+    const market    = bet.outcome?.market?.name || 'Match Winner';
+    const pick      = bet.outcome?.name         || '';
+    const odds      = parseFloat(bet.odds || 1);
+    const homeTeam  = game?.homeTeam?.name      || '';
+    const awayTeam  = game?.awayTeam?.name      || '';
+    const teams     = homeTeam && awayTeam ? `${homeTeam} vs ${awayTeam}` : (game?.name || 'Unknown Match');
+    const league    = game?.league?.name        || '';
+    const startTime = game?.startTime           || null;
+    const sportSlug = game?.sport?.slug         || 'soccer';
+    const sportId   = SPORT_ID_MAP[sportSlug]   || 'sr:sport:1';
 
-  const results = {};
-  for (const [name, query] of Object.entries(queries)) {
+    const sel = { teams, homeTeam, awayTeam, market, pick, odds, league, startTime, matched: false };
+
+    if (homeTeam && awayTeam) {
+      try {
+        const events  = await searchSportyEvents(country, `${homeTeam} ${awayTeam}`, sportId);
+        const matched = fuzzyMatch(events, homeTeam, awayTeam);
+        if (matched) {
+          const outcome = resolveOutcome(matched, pick);
+          sel.matched          = !!outcome;
+          sel.sportyEventId    = matched.eventId || matched.id || null;
+          sel.sportyOutcomeId  = outcome?.outcomeId || outcome?.id || null;
+          sel.sportyOdds       = parseFloat(outcome?.odds || odds);
+          if (outcome && sel.sportyEventId && sel.sportyOutcomeId) {
+            sportySelParts.push(`${sel.sportyEventId}_${sel.sportyOutcomeId}_${sel.sportyOdds.toFixed(2)}`);
+          }
+        }
+      } catch (e) {
+        sel.matchError = e.message;
+      }
+    }
+    selections.push(sel);
+  }
+
+  // 3. Generate booking code
+  let bookingCode = null;
+  if (sportySelParts.length) {
     try {
-      const r = await fetch(GQL, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query }),
-        timeout: 8000,
-      });
-      const data = await r.json();
-      results[name] = { status: r.status, data };
+      bookingCode = await createSportyBookingCode(country, sportySelParts.join('|'));
     } catch (e) {
-      results[name] = { error: e.message };
+      console.error('[BookingCode]', e.message);
     }
   }
-  return res.json(results);
+
+  const totalOdds      = selections.reduce((a, s) => a * s.odds, 1);
+  const matchedCount   = selections.filter(s => s.matched).length;
+  const unmatchedCount = selections.length - matchedCount;
+
+  res.json({
+    ok: true,
+    bookingCode,
+    totalOdds:     parseFloat(totalOdds.toFixed(4)),
+    matchedCount,
+    unmatchedCount,
+    selections,
+    meta: { stakeSlipId: betId, stakeCurrency: slip.currency, country },
+  });
 });
 
+/**
+ * GET /api/stake/slip/:id  — fetch raw Stake slip (debug / standalone use)
+ */
+app.get('/api/stake/slip/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) return sendError(res, 400, 'Invalid bet slip ID');
+  try {
+    const slip = await fetchStakeSlip(id);
+    res.json({ ok: true, slip });
+  } catch (err) {
+    sendError(res, err.response?.status || 502, err.message, err.response?.data);
+  }
+});
 
+/**
+ * GET /api/sportybet/search?country=ng&q=Arsenal+Chelsea
+ */
+app.get('/api/sportybet/search', async (req, res) => {
+  const { country = 'ng', q, sportId } = req.query;
+  if (!q) return sendError(res, 400, 'Missing query param: q');
+  try {
+    const events = await searchSportyEvents(country, q, sportId);
+    res.json({ ok: true, events });
+  } catch (err) {
+    sendError(res, 502, 'SportyBet search failed', err.message);
+  }
+});
 
-app.get('/api/health', (_, res) => res.json({ status: 'ok', ts: Date.now() }));
+/**
+ * POST /api/sportybet/bookingcode
+ * Body: { country, selectionsStr }
+ */
+app.post('/api/sportybet/bookingcode', async (req, res) => {
+  const { country = 'ng', selectionsStr } = req.body;
+  if (!selectionsStr) return sendError(res, 400, 'Missing field: selectionsStr');
+  try {
+    const bookingCode = await createSportyBookingCode(country, selectionsStr);
+    res.json({ ok: true, bookingCode });
+  } catch (err) {
+    sendError(res, 502, 'Failed to generate booking code', err.message);
+  }
+});
 
-// Catch-all
-app.get('*', (_, res) =>
-  res.sendFile(path.join(__dirname, 'public', 'index.html'))
-);
+// SPA fallback
+app.use((_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-app.listen(PORT, () =>
-  console.log(`BetBridge v2 running → http://localhost:${PORT}`)
-);
+// Error handler
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  console.error('[Unhandled]', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+app.listen(PORT, () => {
+  console.log(`\n  🌉  BetBridge  →  http://localhost:${PORT}`);
+  console.log(`  📡  Stake.com GraphQL  →  SportyBet API`);
+  console.log(`  ENV: ${process.env.NODE_ENV || 'development'}\n`);
+});
