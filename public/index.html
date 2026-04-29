@@ -1,1111 +1,814 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>BetBridge — Swap Your Bet Codes</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BetBridge — Stake to SportyBet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <style>
-  :root {
-    --bg: #080b10;
-    --surface: #0e131c;
-    --surface2: #141c28;
-    --border: #1e2a3a;
-    --amber: #f5a623;
-    --amber-dim: #c07a10;
-    --green: #22c55e;
-    --green-dim: #16803c;
-    --red: #ef4444;
-    --text: #e8edf5;
-    --muted: #5a6a80;
-    --code-bg: #0a0f17;
-  }
+:root {
+  --bg: #0a0a0b;
+  --surface: #111114;
+  --card: #16161a;
+  --card2: #1c1c22;
+  --border: #252530;
+  --stake: #f7941d;
+  --stake-dim: rgba(247,148,29,0.12);
+  --stake-border: rgba(247,148,29,0.25);
+  --sporty: #00d166;
+  --sporty-dim: rgba(0,209,102,0.1);
+  --sporty-border: rgba(0,209,102,0.25);
+  --text: #f0f0f5;
+  --muted: #50505f;
+  --muted2: #70708a;
+  --error: #ff4d5e;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 700px 400px at 5% 0%, rgba(247,148,29,0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 500px 500px at 95% 90%, rgba(0,209,102,0.04) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+.wrap {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 36px 18px 80px;
+}
 
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* NAV */
+nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 56px;
+}
+.brand {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 24px;
+  letter-spacing: 3px;
+}
+.brand em { color: var(--stake); font-style: normal; }
+.nav-tag {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted2);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 4px;
+}
 
-  html { scroll-behavior: smooth; }
+/* HERO */
+.hero { margin-bottom: 40px; }
+.flow-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 24px;
+  font-size: 13px;
+}
+.fp-stake  { color: var(--stake); font-weight: 600; }
+.fp-arrow  { color: var(--muted); }
+.fp-sporty { color: var(--sporty); font-weight: 600; }
+h1 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(42px, 9vw, 70px);
+  letter-spacing: 2px;
+  line-height: 0.95;
+  margin-bottom: 16px;
+}
+h1 .dim    { color: var(--muted); }
+h1 .orange { color: var(--stake); }
+h1 .green  { color: var(--sporty); }
+.hero-sub {
+  font-size: 12px;
+  color: var(--muted2);
+  line-height: 1.7;
+  max-width: 420px;
+  border-left: 2px solid var(--border);
+  padding-left: 14px;
+}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Syne', sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
+/* PANEL */
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.panel-body { padding: 20px 20px 0; }
+.field-label {
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.field-label .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--stake);
+  box-shadow: 0 0 8px var(--stake);
+  animation: blink 2s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.url-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 13px 15px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  margin-bottom: 14px;
+}
+.url-input::placeholder { color: var(--muted); font-size: 12px; }
+.url-input:focus {
+  border-color: var(--stake);
+  box-shadow: 0 0 0 3px rgba(247,148,29,0.1);
+}
+.opts {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.opt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 130px;
+}
+.opt-group label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 28px 9px 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2350505f' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  transition: border-color 0.2s;
+}
+select:focus { border-color: var(--sporty); }
+.convert-btn {
+  display: flex;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--stake), #d97b10);
+  color: #000;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 18px;
+  letter-spacing: 3px;
+  padding: 17px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  transition: box-shadow 0.2s, opacity 0.2s;
+}
+.convert-btn:hover { box-shadow: 0 0 36px rgba(247,148,29,0.4); }
+.convert-btn:active { opacity: 0.9; }
+.convert-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid rgba(0,0,0,0.3);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: none;
+}
+.convert-btn.loading .spinner { display: block; }
+.convert-btn.loading .btn-label { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── GRID BG ── */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(245,166,35,.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(245,166,35,.025) 1px, transparent 1px);
-    background-size: 48px 48px;
-    pointer-events: none;
-    z-index: 0;
-  }
+/* ERROR */
+.err-box {
+  display: none;
+  background: rgba(255,77,94,0.08);
+  border: 1px solid rgba(255,77,94,0.25);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--error);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.err-box.show { display: block; }
 
-  /* ── GLOW BLOBS ── */
-  .blob {
-    position: fixed;
-    border-radius: 50%;
-    filter: blur(120px);
-    opacity: .25;
-    pointer-events: none;
-    z-index: 0;
-  }
-  .blob-1 { width: 500px; height: 500px; background: var(--amber); top: -180px; right: -180px; }
-  .blob-2 { width: 400px; height: 400px; background: var(--green); bottom: -150px; left: -150px; }
+/* RESULTS */
+.results {
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+  animation: rise 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+.results.show { display: flex; }
+@keyframes rise { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
 
-  /* ── LAYOUT ── */
-  .wrap {
-    position: relative;
-    z-index: 1;
-    max-width: 780px;
-    margin: 0 auto;
-    padding: 0 20px;
-  }
+/* Selections card */
+.sel-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.sel-head {
+  padding: 15px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card2);
+  border-bottom: 1px solid var(--border);
+}
+.sel-head-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+.badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--stake-dim);
+  border: 1px solid var(--stake-border);
+  color: var(--stake);
+}
+.sel-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(37,37,48,0.5);
+  transition: background 0.15s;
+}
+.sel-row:last-child { border-bottom: none; }
+.sel-row:hover { background: rgba(255,255,255,0.015); }
+.match-name { font-size: 13px; margin-bottom: 4px; }
+.match-meta {
+  font-size: 11px;
+  color: var(--muted2);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pick-tag {
+  background: rgba(0,209,102,0.08);
+  border: 1px solid rgba(0,209,102,0.2);
+  color: var(--sporty);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.mkt-tag {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--muted2);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.matched   { background: var(--sporty); box-shadow: 0 0 6px var(--sporty); }
+.status-dot.unmatched { background: var(--error); }
+.odds-num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 21px;
+  color: var(--stake);
+  letter-spacing: 1px;
+  text-align: right;
+}
+.totals-row {
+  padding: 13px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0,209,102,0.04);
+  border-top: 1px solid rgba(0,209,102,0.12);
+}
+.tot-label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+.tot-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  color: var(--sporty);
+}
 
-  /* ── HEADER ── */
-  header {
-    padding: 44px 0 28px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
+/* Booking code card */
+.code-card {
+  background: var(--card);
+  border: 1px solid var(--sporty-border);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+.code-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--sporty), transparent);
+}
+.code-head {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.code-icon {
+  width: 34px; height: 34px;
+  background: var(--sporty-dim);
+  border: 1px solid var(--sporty-border);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.code-head-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--sporty);
+}
+.code-head-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.code-body { padding: 20px; }
+.code-display {
+  background: var(--surface);
+  border: 1px solid var(--sporty-border);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.code-display::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--sporty-dim), transparent);
+  pointer-events: none;
+}
+.code-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 32px;
+  letter-spacing: 7px;
+  color: var(--sporty);
+  text-shadow: 0 0 28px rgba(0,209,102,0.4);
+  word-break: break-all;
+}
+.copy-btn {
+  background: var(--sporty-dim);
+  border: 1px solid var(--sporty-border);
+  color: var(--sporty);
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  z-index: 1;
+}
+.copy-btn:hover { background: rgba(0,209,102,0.2); }
+.country-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.country-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+.country-btn:hover {
+  border-color: var(--sporty-border);
+  background: var(--sporty-dim);
+  color: var(--sporty);
+}
+.country-btn .flag { font-size: 15px; }
+.cb-name { font-size: 12px; }
+.cb-action { font-size: 10px; color: var(--muted); }
 
-  .logo-icon {
-    width: 44px; height: 44px;
-    background: linear-gradient(135deg, var(--amber), var(--amber-dim));
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px;
-    flex-shrink: 0;
-    box-shadow: 0 0 20px rgba(245,166,35,.35);
-  }
+/* Note */
+.note {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid rgba(247,148,29,0.4);
+  border-radius: 8px;
+  padding: 13px 16px;
+  font-size: 12px;
+  color: var(--muted2);
+  line-height: 1.7;
+}
+.note strong { color: var(--stake); }
 
-  .logo-text {
-    font-size: 26px;
-    font-weight: 800;
-    letter-spacing: -.5px;
-    color: var(--text);
-  }
-  .logo-text span { color: var(--amber); }
+/* HOW IT WORKS */
+.how { margin-top: 60px; }
+.how-header {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--muted);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.how-header::before, .how-header::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.how-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 560px) { .how-grid { grid-template-columns: repeat(2,1fr); } }
+.how-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 14px;
+}
+.how-num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 32px;
+  color: var(--border);
+  line-height: 1;
+  margin-bottom: 8px;
+}
+.how-name { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+.how-desc { font-size: 11px; color: var(--muted); line-height: 1.6; }
 
-  .tagline {
-    margin-top: 2px;
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--muted);
-    letter-spacing: .5px;
-    text-transform: uppercase;
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  /* ── DIRECTION TOGGLE ── */
-  .direction-toggle {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 6px;
-    display: flex;
-    gap: 6px;
-    margin-bottom: 28px;
-  }
-
-  .dir-btn {
-    flex: 1;
-    padding: 13px 16px;
-    border-radius: 10px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-family: 'Syne', sans-serif;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--muted);
-    transition: all .2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-  .dir-btn .platform-badge {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-weight: 600;
-  }
-  .dir-btn .sb-badge { background: rgba(0,168,71,.15); color: #00a847; }
-  .dir-btn .st-badge { background: rgba(245,166,35,.12); color: var(--amber); }
-  .dir-btn .arrow { opacity: .5; }
-
-  .dir-btn.active {
-    background: var(--surface2);
-    color: var(--text);
-    box-shadow: 0 2px 12px rgba(0,0,0,.3);
-  }
-  .dir-btn.active .arrow { opacity: 1; color: var(--amber); }
-
-  /* ── CARD ── */
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    padding: 28px;
-    margin-bottom: 20px;
-    position: relative;
-    overflow: hidden;
-  }
-  .card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--amber), transparent);
-    opacity: .4;
-  }
-
-  /* ── INPUT AREA ── */
-  .input-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    margin-bottom: 10px;
-    display: block;
-  }
-
-  .input-row {
-    display: flex;
-    gap: 10px;
-  }
-
-  .code-input {
-    flex: 1;
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text);
-    outline: none;
-    transition: border-color .2s, box-shadow .2s;
-    letter-spacing: .5px;
-  }
-  .code-input::placeholder { color: var(--muted); opacity: .6; }
-  .code-input:focus {
-    border-color: var(--amber);
-    box-shadow: 0 0 0 3px rgba(245,166,35,.12);
-  }
-
-  .convert-btn {
-    background: linear-gradient(135deg, var(--amber), #e08a10);
-    color: #0a0800;
-    border: none;
-    border-radius: 10px;
-    padding: 14px 22px;
-    font-family: 'Syne', sans-serif;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: transform .15s, box-shadow .2s, opacity .2s;
-    white-space: nowrap;
-    box-shadow: 0 4px 16px rgba(245,166,35,.3);
-    letter-spacing: .3px;
-  }
-  .convert-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(245,166,35,.4); }
-  .convert-btn:active { transform: translateY(0); }
-  .convert-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-
-  .hint-text {
-    margin-top: 10px;
-    font-size: 12px;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  /* ── LOADER ── */
-  .loader {
-    display: none;
-    align-items: center;
-    gap: 12px;
-    padding: 20px 0;
-    color: var(--muted);
-    font-size: 13px;
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .loader.visible { display: flex; }
-  .spinner {
-    width: 18px; height: 18px;
-    border: 2px solid var(--border);
-    border-top-color: var(--amber);
-    border-radius: 50%;
-    animation: spin .7s linear infinite;
-    flex-shrink: 0;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* ── ERROR ── */
-  .error-box {
-    display: none;
-    background: rgba(239,68,68,.08);
-    border: 1px solid rgba(239,68,68,.25);
-    border-radius: 10px;
-    padding: 14px 16px;
-    margin-top: 16px;
-    font-size: 13px;
-    color: var(--red);
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .error-box.visible { display: block; }
-
-  /* ── RESULT ── */
-  .result-card {
-    display: none;
-    animation: fadeUp .3s ease;
-  }
-  .result-card.visible { display: block; }
-
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .result-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .result-title {
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: .8px;
-    text-transform: uppercase;
-    color: var(--green);
-    font-family: 'JetBrains Mono', monospace;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .result-title::before {
-    content: '';
-    width: 8px; height: 8px;
-    background: var(--green);
-    border-radius: 50%;
-    box-shadow: 0 0 8px var(--green);
-    display: block;
-  }
-
-  .odds-badge {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 6px 14px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--amber);
-  }
-
-  /* ── SELECTIONS ── */
-  .selections-list { display: flex; flex-direction: column; gap: 10px; }
-
-  .sel-item {
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 4px 16px;
-    align-items: start;
-    transition: border-color .2s;
-  }
-  .sel-item:hover { border-color: rgba(245,166,35,.25); }
-
-  .sel-event {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text);
-    grid-column: 1;
-  }
-  .sel-market {
-    font-size: 12px;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    grid-column: 1;
-  }
-  .sel-odds {
-    grid-column: 2;
-    grid-row: 1 / 3;
-    align-self: center;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--amber);
-    text-align: right;
-  }
-  .sel-pick {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: rgba(245,166,35,.1);
-    color: var(--amber);
-    font-family: 'JetBrains Mono', monospace;
-    margin-top: 4px;
-  }
-
-  /* ── ACTION SECTION ── */
-  .action-section {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid var(--border);
-  }
-
-  .action-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    margin-bottom: 10px;
-  }
-
-  .action-row { display: flex; gap: 10px; flex-wrap: wrap; }
-
-  .action-link {
-    flex: 1;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 16px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    color: var(--text);
-    text-decoration: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: border-color .2s, background .2s;
-    word-break: break-all;
-    min-width: 0;
-  }
-  .action-link:hover {
-    border-color: var(--amber);
-    background: rgba(245,166,35,.06);
-    color: var(--amber);
-  }
-  .link-icon { flex-shrink: 0; font-size: 16px; }
-
-  .copy-btn {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 16px;
-    font-family: 'Syne', sans-serif;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all .2s;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .copy-btn:hover { border-color: var(--amber); color: var(--amber); }
-  .copy-btn.copied { border-color: var(--green); color: var(--green); }
-
-  .note-box {
-    margin-top: 12px;
-    background: rgba(245,166,35,.05);
-    border: 1px solid rgba(245,166,35,.15);
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 12px;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    line-height: 1.6;
-  }
-  .note-box strong { color: var(--amber); font-weight: 500; }
-
-  /* ── MATCH STATUS ── */
-  .match-bar {
-    margin-bottom: 18px;
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-  }
-  .match-bar-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    font-size: 12px;
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .match-bar-label { color: var(--muted); }
-  .match-rate { font-weight: 600; color: var(--text); }
-  .match-rate.full { color: var(--green); }
-  .match-rate.partial { color: var(--amber); }
-  .match-rate.low { color: var(--red); }
-
-  .progress-track {
-    height: 4px;
-    background: var(--border);
-    border-radius: 99px;
-    overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%;
-    border-radius: 99px;
-    transition: width .6s ease;
-  }
-  .progress-fill.full    { background: var(--green); }
-  .progress-fill.partial { background: var(--amber); }
-  .progress-fill.low     { background: var(--red); }
-
-  /* ── PER-SELECTION STATUS BADGE ── */
-  .status-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    margin-top: 3px;
-  }
-  .status-dot.matched         { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .status-dot.partial         { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
-  .status-dot.unmatched       { background: var(--red); }
-  .status-dot.event_not_found { background: var(--red); }
-
-  .sel-item { grid-template-columns: 10px 1fr auto; gap: 4px 10px; }
-  .sel-item .status-dot { grid-row: 1 / 3; align-self: start; margin-top: 4px; }
-  .sel-event  { grid-column: 2; }
-  .sel-market { grid-column: 2; }
-  .sel-odds   { grid-column: 3; grid-row: 1 / 3; }
-  .sel-pick   { grid-column: 2; }
-
-  .sel-match-note {
-    grid-column: 2 / 4;
-    font-size: 11px;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    margin-top: 4px;
-    opacity: .7;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .sel-match-note.ok { color: var(--green); opacity: .8; }
-
-  /* ── HOW IT WORKS ── */
-  .how-section {
-    margin-top: 8px;
-    margin-bottom: 56px;
-  }
-  .how-title {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    margin-bottom: 16px;
-  }
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-  @media (max-width: 520px) { .steps { grid-template-columns: 1fr; } }
-
-  .step {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 18px;
-  }
-  .step-num {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--amber);
-    font-weight: 600;
-    margin-bottom: 8px;
-  }
-  .step-text {
-    font-size: 13px;
-    color: var(--muted);
-    line-height: 1.6;
-  }
-
-  /* ── FOOTER ── */
-  footer {
-    border-top: 1px solid var(--border);
-    padding: 24px 0;
-    text-align: center;
-    font-size: 12px;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-  }
-  footer a { color: var(--amber); text-decoration: none; }
+footer {
+  margin-top: 70px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 </style>
 </head>
 <body>
-<div class="blob blob-1"></div>
-<div class="blob blob-2"></div>
-
 <div class="wrap">
 
-  <!-- HEADER -->
-  <header>
-    <div class="logo-icon">🌉</div>
-    <div>
-      <div class="logo-text">Bet<span>Bridge</span></div>
-      <div class="tagline">Cross-platform bet code converter</div>
-    </div>
-  </header>
+  <nav>
+    <div class="brand">Bet<em>Bridge</em></div>
+    <div class="nav-tag">Stake → SportyBet</div>
+  </nav>
 
-  <!-- DIRECTION TOGGLE -->
-  <div class="direction-toggle">
-    <button class="dir-btn active" id="btn-sb-st" onclick="setDir('sb-st')">
-      <span class="platform-badge sb-badge">SportyBet</span>
-      <span class="arrow">→</span>
-      <span class="platform-badge st-badge">Stake</span>
-    </button>
-    <button class="dir-btn" id="btn-st-sb" onclick="setDir('st-sb')">
-      <span class="platform-badge st-badge">Stake</span>
-      <span class="arrow">→</span>
-      <span class="platform-badge sb-badge">SportyBet</span>
-    </button>
+  <div class="hero">
+    <div class="flow-pill">
+      <span class="fp-stake">⬡ Stake.com</span>
+      <span class="fp-arrow">→</span>
+      <span class="fp-sporty">◈ SportyBet</span>
+    </div>
+    <h1>
+      <span class="dim">Turn your</span><br>
+      <span class="orange">Stake</span> slip<br>
+      <span class="dim">into a</span> <span class="green">Sporty</span><br>
+      <span class="dim">code</span>
+    </h1>
+    <p class="hero-sub">Place a bet on Stake, grab the share link, paste it here — get a SportyBet booking code instantly.</p>
   </div>
 
-  <!-- INPUT CARD -->
-  <div class="card">
-    <label class="input-label" id="input-label">SportyBet Share Code</label>
-    <div class="input-row">
+  <div class="panel">
+    <div class="panel-body">
+      <div class="field-label"><span class="dot"></span>Stake.com bet slip link</div>
       <input
-        class="code-input"
-        type="text"
-        id="code-input"
-        placeholder="e.g. SBNG1234XYZ"
+        id="urlInput"
+        class="url-input"
+        type="url"
+        placeholder="https://stake.com/sports/bet-slip/xxxxxxxxxx"
         autocomplete="off"
-        autocorrect="off"
         spellcheck="false"
-        onkeydown="if(event.key==='Enter') convert()"
       />
-      <button class="convert-btn" id="convert-btn" onclick="convert()">Convert</button>
+      <div class="opts">
+        <div class="opt-group">
+          <label>SportyBet Country</label>
+          <select id="countrySelect">
+            <option value="ng">🇳🇬 Nigeria</option>
+            <option value="gh">🇬🇭 Ghana</option>
+            <option value="ke">🇰🇪 Kenya</option>
+            <option value="tz">🇹🇿 Tanzania</option>
+            <option value="ug">🇺🇬 Uganda</option>
+            <option value="et">🇪🇹 Ethiopia</option>
+            <option value="cm">🇨🇲 Cameroon</option>
+            <option value="za">🇿🇦 South Africa</option>
+          </select>
+        </div>
+        <div class="opt-group">
+          <label>Odds Format</label>
+          <select id="oddsFormat">
+            <option value="decimal">Decimal (1.95)</option>
+            <option value="fractional">Fractional (19/20)</option>
+            <option value="american">American (-105)</option>
+          </select>
+        </div>
+      </div>
     </div>
-    <div class="hint-text" id="hint-text">Paste your SportyBet share code above</div>
-
-    <div class="loader" id="loader">
+    <button class="convert-btn" id="convertBtn" onclick="handleConvert()">
+      <span class="btn-label">Generate SportyBet Code →</span>
       <div class="spinner"></div>
-      Fetching bet slip…
-    </div>
-
-    <div class="error-box" id="error-box"></div>
+    </button>
   </div>
 
-  <!-- RESULT CARD -->
-  <div class="card result-card" id="result-card">
-    <div class="result-header">
-      <div class="result-title" id="result-title">Bet Slip Fetched</div>
-      <div class="odds-badge" id="total-odds">–</div>
-    </div>
+  <div class="err-box" id="errBox"></div>
 
-    <!-- Match rate progress bar -->
-    <div class="match-bar" id="match-bar" style="display:none">
-      <div class="match-bar-header">
-        <span class="match-bar-label">SELECTIONS MATCHED</span>
-        <span class="match-rate" id="match-rate-text">–</span>
+  <div class="results" id="results">
+
+    <div class="sel-card">
+      <div class="sel-head">
+        <div class="sel-head-title">Selections</div>
+        <div class="badge" id="selCount">0 picks</div>
       </div>
-      <div class="progress-track">
-        <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+      <div id="selList"></div>
+      <div class="totals-row">
+        <div class="tot-label">Combined Odds</div>
+        <div class="tot-val" id="totalOdds">—</div>
       </div>
     </div>
 
-    <div class="selections-list" id="selections-list"></div>
-
-    <div class="action-section">
-      <div class="action-label" id="action-label">Open on Target Platform</div>
-      <div class="action-row">
-        <a class="action-link" id="target-link" href="#" target="_blank" rel="noopener">
-          <span class="link-icon">🔗</span>
-          <span id="target-link-text">Open link</span>
-        </a>
-        <button class="copy-btn" id="copy-btn" onclick="copyLink()">
-          <span>📋</span> Copy
-        </button>
+    <div class="code-card">
+      <div class="code-head">
+        <div class="code-icon">🎯</div>
+        <div>
+          <div class="code-head-title">SportyBet Booking Code</div>
+          <div class="code-head-sub">Share or enter on SportyBet to load this bet slip</div>
+        </div>
       </div>
-      <div class="note-box" id="note-box"></div>
+      <div class="code-body">
+        <div class="code-display">
+          <div class="code-val" id="bookingCode">———</div>
+          <button class="copy-btn" id="copyBtn" onclick="copyCode()">Copy</button>
+        </div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:10px;">Open on SportyBet</div>
+        <div class="country-grid" id="countryLinks"></div>
+      </div>
     </div>
+
+    <div class="note" id="noteBox"></div>
   </div>
 
-  <!-- HOW IT WORKS -->
-  <div class="how-section">
-    <div class="how-title">How it works</div>
-    <div class="steps">
-      <div class="step">
-        <div class="step-num">01 / PASTE</div>
-        <div class="step-text">Paste your share code or link from SportyBet or Stake.</div>
+  <div class="how">
+    <div class="how-header">How it works</div>
+    <div class="how-grid">
+      <div class="how-item">
+        <div class="how-num">01</div>
+        <div class="how-name">Place on Stake</div>
+        <div class="how-desc">Place your bet on Stake.com and copy the share link</div>
       </div>
-      <div class="step">
-        <div class="step-num">02 / FETCH</div>
-        <div class="step-text">BetBridge fetches your full bet slip — events, picks, and odds.</div>
+      <div class="how-item">
+        <div class="how-num">02</div>
+        <div class="how-name">Paste Link</div>
+        <div class="how-desc">Drop the Stake share link into BetBridge above</div>
       </div>
-      <div class="step">
-        <div class="step-num">03 / SWAP</div>
-        <div class="step-text">Get the equivalent slip details ready for the other platform.</div>
+      <div class="how-item">
+        <div class="how-num">03</div>
+        <div class="how-name">Auto Match</div>
+        <div class="how-desc">We find the same fixtures on SportyBet's catalog</div>
+      </div>
+      <div class="how-item">
+        <div class="how-num">04</div>
+        <div class="how-name">Get Code</div>
+        <div class="how-desc">Load the booking code on SportyBet and bet</div>
       </div>
     </div>
   </div>
 
   <footer>
-    BetBridge · Free to use · No account needed ·
-    <a href="https://github.com" target="_blank">Open source</a>
+    <span>BetBridge — Not affiliated with Stake or SportyBet</span>
+    <span>Gamble responsibly · 18+</span>
   </footer>
-
 </div>
 
 <script>
-  let currentDir = 'sb-st';
-  let currentTargetLink = '';
+const COUNTRIES = {
+  ng: { name: 'Nigeria',      flag: '🇳🇬', url: 'https://www.sportybet.com/ng'  },
+  gh: { name: 'Ghana',        flag: '🇬🇭', url: 'https://www.sportybet.com/gh'  },
+  ke: { name: 'Kenya',        flag: '🇰🇪', url: 'https://www.sportybet.com/ke'  },
+  tz: { name: 'Tanzania',     flag: '🇹🇿', url: 'https://www.sportybet.com/tz'  },
+  ug: { name: 'Uganda',       flag: '🇺🇬', url: 'https://www.sportybet.com/ug'  },
+  et: { name: 'Ethiopia',     flag: '🇪🇹', url: 'https://www.sportybet.com/et'  },
+  cm: { name: 'Cameroon',     flag: '🇨🇲', url: 'https://www.sportybet.com/cm'  },
+  za: { name: 'South Africa', flag: '🇿🇦', url: 'https://www.sportybet.com/rsa' },
+};
 
-  function setDir(dir) {
-    currentDir = dir;
-    document.getElementById('btn-sb-st').classList.toggle('active', dir === 'sb-st');
-    document.getElementById('btn-st-sb').classList.toggle('active', dir === 'st-sb');
-    const input = document.getElementById('code-input');
-    const label = document.getElementById('input-label');
-    const hint  = document.getElementById('hint-text');
-    if (dir === 'sb-st') {
-      label.textContent = 'SportyBet Share Code';
-      input.placeholder = 'e.g. HZL7U2';
-      hint.textContent  = 'Paste your SportyBet share code above';
-    } else {
-      label.textContent = 'Stake Share Link';
-      input.placeholder = 'https://stake.com/sports/home?iid=sport%3A...';
-      hint.textContent  = 'Paste your full Stake share link above';
-    }
-    document.getElementById('result-card').classList.remove('visible');
-    document.getElementById('error-box').classList.remove('visible');
-    input.value = '';
-  }
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-  // ── SPORTYBET: fetch directly from browser ──
-  async function fetchSportyBet(code) {
-    const countries = ['ng', 'gh', 'ke', 'za', 'tz', 'ug', 'et'];
-    const ts = Date.now();
-    for (const c of countries) {
-      try {
-        const url = `https://www.sportybet.com/api/${c}/orders/share?shareCode=${encodeURIComponent(code.toUpperCase())}&_time=${ts}`;
-        const r = await fetch(url, {
-          headers: { 'Accept': 'application/json', 'Referer': `https://www.sportybet.com/${c}/` }
-        });
-        if (!r.ok) continue;
-        const d = await r.json();
-        if (d?.bizCode === 0 && d.data) return { country: c, raw: d.data };
-        if (d?.data?.betInfo || d?.betInfo) return { country: c, raw: d.data || d };
-      } catch (_) {}
-    }
-    return null;
-  }
+function showErr(msg) {
+  const box = document.getElementById('errBox');
+  box.textContent = '⚠ ' + msg;
+  box.classList.add('show');
+  document.getElementById('results').classList.remove('show');
+}
+function hideErr() { document.getElementById('errBox').classList.remove('show'); }
 
-  // ── STAKE: fetch GraphQL directly from browser ──
-  async function fetchStake(link) {
-    // Extract bet ID from iid=sport%3A<id>
-    const iidMatch = link.match(/[?&]iid=sport(?:%3A|:)(\d+)/i);
-    const scMatch  = link.match(/[?&]shareCode=([^&]+)/i);
-    const pathMatch = link.match(/\/(?:bets\/)?share\/([^/?&]+)/i);
+document.getElementById('urlInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') handleConvert();
+});
 
-    let betId = null, shareCode = null;
-    if (iidMatch) betId = iidMatch[1];
-    else if (scMatch) shareCode = decodeURIComponent(scMatch[1]);
-    else if (pathMatch) shareCode = pathMatch[1];
-    else shareCode = link.trim();
+async function handleConvert() {
+  const stakeUrl = document.getElementById('urlInput').value.trim();
+  if (!stakeUrl) { showErr('Please paste a Stake.com bet slip link.'); return; }
 
-    const GQL = 'https://stake.com/_api/graphql';
-    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+  hideErr();
+  const btn = document.getElementById('convertBtn');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  document.getElementById('results').classList.remove('show');
 
-    if (betId) {
-      // Try bet → multiBet → sportBet
-      const queries = [
-        [`bet`,      `query { bet(id:"${betId}") { id type totalOdds bets { id odds outcome{id name} market{id name} fixture{id name slug startTime tournament{name slug} sport{name slug} home{name} away{name}} } } }`],
-        [`multiBet`, `query { multiBet(id:"${betId}") { id type totalOdds bets { id odds outcome{id name} market{id name} fixture{id name slug startTime tournament{name slug} sport{name slug} home{name} away{name}} } } }`],
-        [`sportBet`, `query { sportBet(id:"${betId}") { id type totalOdds bets { id odds outcome{id name} market{id name} fixture{id name slug startTime tournament{name slug} sport{name slug} home{name} away{name}} } } }`],
-      ];
-      for (const [key, query] of queries) {
-        try {
-          const r = await fetch(GQL, { method:'POST', headers, body: JSON.stringify({query}) });
-          const d = await r.json();
-          if (d?.data?.[key]) return { raw: d.data[key] };
-        } catch (_) {}
-      }
-    }
-
-    if (shareCode) {
-      const query = `query { shareBet(shareCode:"${shareCode}") { id type totalOdds bets { id odds outcome{id name} market{id name} fixture{id name slug startTime tournament{name slug} sport{name slug} home{name} away{name}} } } }`;
-      try {
-        const r = await fetch(GQL, { method:'POST', headers, body: JSON.stringify({query}) });
-        const d = await r.json();
-        if (d?.data?.shareBet) return { raw: d.data.shareBet };
-      } catch (_) {}
-    }
-
-    return null;
-  }
-
-  // ── MAIN CONVERT ──
-  async function convert() {
-    const code = document.getElementById('code-input').value.trim();
-    if (!code) { showError('Please paste a share code or link first.'); return; }
-
-    setLoading(true); hideResult(); hideError();
-
-    try {
-      let rawBetslip = null;
-
-      if (currentDir === 'sb-st') {
-        setLoadingMsg('Fetching from SportyBet…');
-        const fetched = await fetchSportyBet(code);
-        if (!fetched) {
-          showError('Could not fetch SportyBet slip. Make sure the code is correct and not expired.');
-          return;
-        }
-        rawBetslip = { platform: 'sportybet', country: fetched.country, raw: fetched.raw };
-      } else {
-        setLoadingMsg('Fetching from Stake…');
-        const fetched = await fetchStake(code);
-        if (!fetched) {
-          showError('Could not fetch Stake slip. Make sure you pasted the full share link.');
-          return;
-        }
-        rawBetslip = { platform: 'stake', raw: fetched.raw };
-      }
-
-      // Send raw data to our server for normalisation + matching
-      setLoadingMsg('Matching selections…');
-      const res = await fetch('/api/resolve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rawBetslip),
-      });
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        showError(data.error || 'Matching failed. Please try again.');
-        return;
-      }
-
-      showResult(data);
-    } catch (err) {
-      showError('Network error: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function showResult(data) {
-    const { betslip, resolution, targetPlatform } = data;
-    const sel = resolution?.selections || betslip.selections;
-    const deeplink = resolution?.deeplink || null;
-    const matchRate = resolution?.matchRate ?? 1;
-    const matchedCount = resolution ? sel.filter(s => s.status === 'matched').length : sel.length;
-
-    document.getElementById('result-title').textContent =
-      `${sel.length} Selection${sel.length !== 1 ? 's' : ''} · ${(betslip.betType||'combo').toUpperCase()}`;
-    document.getElementById('total-odds').textContent =
-      betslip.totalOdds ? `x${Number(betslip.totalOdds).toFixed(2)}` : '–';
-
-    if (resolution) {
-      document.getElementById('match-bar').style.display = '';
-      const pct = Math.round(matchRate * 100);
-      const cls = pct === 100 ? 'full' : pct >= 50 ? 'partial' : 'low';
-      document.getElementById('match-rate-text').textContent = `${matchedCount}/${sel.length}`;
-      document.getElementById('match-rate-text').className = `match-rate ${cls}`;
-      const fill = document.getElementById('progress-fill');
-      fill.style.width = pct + '%';
-      fill.className = `progress-fill ${cls}`;
-    }
-
-    const list = document.getElementById('selections-list');
-    list.innerHTML = '';
-    sel.forEach(s => {
-      const div = document.createElement('div');
-      div.className = 'sel-item';
-      const eventDisplay = s.homeTeam && s.awayTeam ? `${s.homeTeam} vs ${s.awayTeam}` : s.eventName || 'Unknown Event';
-      const time = s.startTime ? new Date(s.startTime).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
-      const status = s.status || 'matched';
-      const dotCls = status === 'matched' ? 'matched' : (status === 'event_not_found' || status === 'unmatched') ? 'unmatched' : 'partial';
-      div.innerHTML = `
-        <div class="status-dot ${dotCls}"></div>
-        <div class="sel-event">${escHtml(eventDisplay)}</div>
-        <div class="sel-market">${escHtml(s.market||'')}${time ? ' · '+time : ''}</div>
-        <div class="sel-odds">${s.odds ? Number(s.odds).toFixed(2) : '–'}</div>
-        ${s.selection ? `<span class="sel-pick">${escHtml(s.selection)}</span>` : ''}
-        ${s.note ? `<div class="sel-match-note ${status==='matched'?'ok':''}">${escHtml(s.note)}</div>` : ''}
-      `;
-      list.appendChild(div);
+  try {
+    const country = document.getElementById('countrySelect').value;
+    const resp = await fetch('/api/convert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stakeUrl: stakeUrl, country: country }),
+      signal: AbortSignal.timeout(30000),
     });
 
-    currentTargetLink = deeplink || '';
-    const linkEl = document.getElementById('target-link');
-    if (deeplink) {
-      linkEl.href = deeplink;
-      linkEl.style.display = '';
-      document.getElementById('target-link-text').textContent =
-        (targetPlatform === 'stake' ? 'Open Stake.com' : 'Open SportyBet') + ' →';
+    const data = await resp.json();
+    if (!resp.ok) { showErr(data.error || 'Server error ' + resp.status); return; }
+    renderResults(data);
+
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      showErr('Request timed out — try again.');
     } else {
-      linkEl.style.display = 'none';
+      showErr('Could not reach the server. Please try again.');
     }
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+}
 
-    document.getElementById('action-label').textContent =
-      targetPlatform === 'stake' ? 'Continue on Stake' : 'Continue on SportyBet';
+function renderResults(data) {
+  var selections = data.selections || [];
+  var bookingCode = data.bookingCode;
+  var country = (data.meta && data.meta.country) || document.getElementById('countrySelect').value;
+  var totalOddsRaw = data.totalOdds;
+  var fmt = document.getElementById('oddsFormat').value;
 
-    const noteEl = document.getElementById('note-box');
-    if (resolution && matchedCount < sel.length) {
-      noteEl.innerHTML = `<strong>${matchedCount}/${sel.length}</strong> matched automatically. <strong>${sel.length - matchedCount}</strong> need manual adding. 🟢 = auto-added.`;
-    } else if (resolution && matchedCount === sel.length) {
-      noteEl.innerHTML = `<strong>All ${sel.length} selections matched!</strong> Click the link to open your pre-filled betslip.`;
-    } else {
-      noteEl.innerHTML = 'Use the selections list to recreate your bet on the other platform.';
-    }
+  var totalOdds = totalOddsRaw
+    ? parseFloat(totalOddsRaw).toFixed(2)
+    : selections.reduce(function(a,s){ return a * s.odds; }, 1).toFixed(2);
 
-    document.getElementById('result-card').classList.add('visible');
-    document.getElementById('result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('selCount').textContent = selections.length + ' pick' + (selections.length !== 1 ? 's' : '');
+  document.getElementById('totalOdds').textContent = formatOdds(totalOdds, fmt);
+
+  var list = document.getElementById('selList');
+  list.innerHTML = selections.map(function(s) {
+    var date = s.startTime ? new Date(s.startTime).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }) : '';
+    var dotCls = s.matched ? 'matched' : 'unmatched';
+    return '<div class="sel-row">'
+      + '<div>'
+        + '<div class="match-name">' + esc(s.teams || '') + '</div>'
+        + '<div class="match-meta">'
+          + '<span class="pick-tag">' + esc(s.pick || '') + '</span>'
+          + '<span class="mkt-tag">' + esc(s.market || '') + '</span>'
+          + (s.league ? '<span>' + esc(s.league) + '</span>' : '')
+          + (date ? '<span>' + date + '</span>' : '')
+        + '</div>'
+      + '</div>'
+      + '<div class="status-dot ' + dotCls + '" title="' + (s.matched ? 'Matched on SportyBet' : 'Not found on SportyBet') + '"></div>'
+      + '<div class="odds-num">' + formatOdds(s.odds, fmt) + '</div>'
+      + '</div>';
+  }).join('');
+
+  // Booking code
+  var codeEl = document.getElementById('bookingCode');
+  if (bookingCode) {
+    codeEl.textContent = bookingCode;
+    codeEl.style.fontSize = '';
+    codeEl.style.color = 'var(--sporty)';
+  } else {
+    codeEl.textContent = 'N/A';
+    codeEl.style.fontSize = '20px';
+    codeEl.style.color = 'var(--muted)';
   }
 
-  function copyLink() {
-    if (!currentTargetLink) return;
-    navigator.clipboard.writeText(currentTargetLink).then(() => {
-      const btn = document.getElementById('copy-btn');
-      btn.classList.add('copied');
-      btn.innerHTML = '<span>✓</span> Copied!';
-      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '<span>📋</span> Copy'; }, 2000);
-    });
+  // Country links
+  var linksEl = document.getElementById('countryLinks');
+  var featured = ['ng', 'gh', 'ke', 'tz'];
+  linksEl.innerHTML = featured.map(function(k) {
+    var c = COUNTRIES[k];
+    var href = bookingCode ? (c.url + '/#/booking?code=' + bookingCode) : c.url;
+    return '<a class="country-btn" href="' + href + '" target="_blank" rel="noopener">'
+      + '<span class="flag">' + c.flag + '</span>'
+      + '<div><div class="cb-name">' + c.name + '</div>'
+      + '<div class="cb-action">' + (bookingCode ? 'Load code ↗' : 'Open site ↗') + '</div></div>'
+      + '</a>';
+  }).join('');
+
+  // Note
+  var matched = selections.filter(function(s){ return s.matched; }).length;
+  var noteEl = document.getElementById('noteBox');
+  if (!bookingCode) {
+    noteEl.innerHTML = '<strong>No code generated</strong> — none of the events were found on SportyBet ' + country.toUpperCase() + '. The fixtures may not be available in your country yet.';
+  } else if (matched < selections.length) {
+    noteEl.innerHTML = '<strong>' + matched + '/' + selections.length + ' matched.</strong> Some events weren\'t found on SportyBet — add those manually. Green dot = auto-added.';
+  } else {
+    noteEl.innerHTML = 'All <strong>' + selections.length + '</strong> selections matched. Load the code on SportyBet to place your bet.';
   }
 
-  function setLoading(on) {
-    document.getElementById('loader').classList.toggle('visible', on);
-    document.getElementById('convert-btn').disabled = on;
-    if (!on) document.getElementById('convert-btn').textContent = 'Convert';
+  document.getElementById('results').classList.add('show');
+}
+
+function copyCode() {
+  var code = document.getElementById('bookingCode').textContent;
+  if (code === 'N/A' || code === '———') return;
+  navigator.clipboard.writeText(code).then(function() {
+    var btn = document.getElementById('copyBtn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(function(){ btn.textContent = 'Copy'; }, 2000);
+  });
+}
+
+function formatOdds(val, fmt) {
+  var d = parseFloat(val);
+  if (isNaN(d)) return '—';
+  if (fmt === 'decimal') return d.toFixed(2);
+  if (fmt === 'fractional') {
+    var n = d - 1, denom = 100, num = Math.round(n * denom), g = gcd(num, denom);
+    return (num/g) + '/' + (denom/g);
   }
-  function setLoadingMsg(msg) {
-    const l = document.getElementById('loader');
-    l.innerHTML = `<div class="spinner"></div>${msg}`;
-    l.classList.add('visible');
+  if (fmt === 'american') {
+    return d >= 2 ? '+' + Math.round((d-1)*100) : '-' + Math.round(100/(d-1));
   }
-  function hideResult() { document.getElementById('result-card').classList.remove('visible'); }
-  function showError(msg) {
-    const box = document.getElementById('error-box');
-    box.textContent = '⚠ ' + msg;
-    box.classList.add('visible');
-  }
-  function hideError() { document.getElementById('error-box').classList.remove('visible'); }
-  function escHtml(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-</script>
-
-  function setDir(dir) {
-    currentDir = dir;
-    document.getElementById('btn-sb-st').classList.toggle('active', dir === 'sb-st');
-    document.getElementById('btn-st-sb').classList.toggle('active', dir === 'st-sb');
-
-    const input = document.getElementById('code-input');
-    const label = document.getElementById('input-label');
-    const hint = document.getElementById('hint-text');
-
-    if (dir === 'sb-st') {
-      label.textContent = 'SportyBet Share Code';
-      input.placeholder = 'e.g. SBNG1234XYZ';
-      hint.textContent = 'Paste your SportyBet share code above';
-    } else {
-      label.textContent = 'Stake Share Code or Link';
-      input.placeholder = 'e.g. ABC123XY or full stake.com link';
-      hint.textContent = 'Paste your Stake share code or full share link above';
-    }
-
-    // Reset result
-    document.getElementById('result-card').classList.remove('visible');
-    document.getElementById('error-box').classList.remove('visible');
-    input.value = '';
-  }
-
-  async function convert() {
-    const code = document.getElementById('code-input').value.trim();
-    if (!code) {
-      showError('Please paste a share code first.');
-      return;
-    }
-
-    setLoading(true);
-    hideResult();
-    hideError();
-
-    try {
-      const endpoint = currentDir === 'sb-st'
-        ? `/api/sportybet-to-stake?code=${encodeURIComponent(code)}`
-        : `/api/stake-to-sportybet?code=${encodeURIComponent(code)}`;
-
-      const res = await fetch(endpoint);
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        showError(data.error || 'Something went wrong. Please try again.');
-        return;
-      }
-
-      showResult(data);
-    } catch (err) {
-      showError('Network error. Please check your connection and try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function showResult(data) {
-    const { betslip, resolution, targetPlatform } = data;
-    const sel = resolution?.selections || betslip.selections;
-    const deeplink = resolution?.deeplink || null;
-    const matchRate = resolution?.matchRate ?? 1;
-    const matchedCount = resolution ? sel.filter(s => s.status === 'matched').length : sel.length;
-
-    // Title
-    document.getElementById('result-title').textContent =
-      `${sel.length} Selection${sel.length !== 1 ? 's' : ''} · ${betslip.betType.toUpperCase()}`;
-
-    // Total odds
-    document.getElementById('total-odds').textContent =
-      betslip.totalOdds ? `x${Number(betslip.totalOdds).toFixed(2)}` : '–';
-
-    // Match bar
-    if (resolution) {
-      const bar = document.getElementById('match-bar');
-      bar.style.display = '';
-      const pct = Math.round(matchRate * 100);
-      const cls = pct === 100 ? 'full' : pct >= 50 ? 'partial' : 'low';
-      document.getElementById('match-rate-text').textContent = `${matchedCount}/${sel.length}`;
-      document.getElementById('match-rate-text').className = `match-rate ${cls}`;
-      const fill = document.getElementById('progress-fill');
-      fill.style.width = pct + '%';
-      fill.className = `progress-fill ${cls}`;
-    }
-
-    // Selections
-    const list = document.getElementById('selections-list');
-    list.innerHTML = '';
-    sel.forEach(s => {
-      const div = document.createElement('div');
-      div.className = 'sel-item';
-      const eventDisplay = s.homeTeam && s.awayTeam
-        ? `${s.homeTeam} vs ${s.awayTeam}`
-        : s.eventName || 'Unknown Event';
-      const time = s.startTime ? new Date(s.startTime).toLocaleString('en-GB', {
-        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-      }) : '';
-
-      // Status dot
-      const status = s.status || 'matched';
-      const dotCls = status === 'matched' ? 'matched'
-        : (status === 'event_not_found' || status === 'unmatched') ? 'unmatched'
-        : 'partial';
-
-      // Match note
-      const noteText = s.note || '';
-      const noteClass = status === 'matched' ? 'ok' : '';
-
-      div.innerHTML = `
-        <div class="status-dot ${dotCls}"></div>
-        <div class="sel-event">${escHtml(eventDisplay)}</div>
-        <div class="sel-market">${escHtml(s.market)}${time ? ' · ' + time : ''}</div>
-        <div class="sel-odds">${s.odds ? Number(s.odds).toFixed(2) : '–'}</div>
-        ${s.selection ? `<span class="sel-pick">${escHtml(s.selection)}</span>` : ''}
-        ${noteText ? `<div class="sel-match-note ${noteClass}">${escHtml(noteText)}</div>` : ''}
-      `;
-      list.appendChild(div);
-    });
-
-    // Target link
-    currentTargetLink = deeplink || '';
-    const linkEl = document.getElementById('target-link');
-    const linkText = document.getElementById('target-link-text');
-    if (deeplink) {
-      linkEl.href = deeplink;
-      linkEl.style.display = '';
-      linkText.textContent = (targetPlatform === 'stake' ? 'Open Stake.com' : 'Open SportyBet') + ' →';
-    } else {
-      linkEl.style.display = 'none';
-    }
-
-    document.getElementById('action-label').textContent =
-      targetPlatform === 'stake' ? 'Continue on Stake' : 'Continue on SportyBet';
-
-    // Note box
-    const noteEl = document.getElementById('note-box');
-    if (resolution && matchedCount < sel.length) {
-      const missed = sel.length - matchedCount;
-      noteEl.innerHTML = `<strong>${matchedCount}/${sel.length}</strong> selections matched automatically. ` +
-        `<strong>${missed}</strong> could not be found on the target platform — ` +
-        `add those manually. Green dot = auto-added to betslip.`;
-    } else if (resolution && matchedCount === sel.length) {
-      noteEl.innerHTML = `<strong>All ${sel.length} selections matched!</strong> Click the link to open your pre-filled betslip.`;
-    } else {
-      noteEl.innerHTML = 'Use the selections list to recreate your bet on the target platform.';
-    }
-
-    document.getElementById('result-card').classList.add('visible');
-    document.getElementById('result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-
-  function copyLink() {
-    if (!currentTargetLink) return;
-    navigator.clipboard.writeText(currentTargetLink).then(() => {
-      const btn = document.getElementById('copy-btn');
-      btn.classList.add('copied');
-      btn.innerHTML = '<span>✓</span> Copied!';
-      setTimeout(() => {
-        btn.classList.remove('copied');
-        btn.innerHTML = '<span>📋</span> Copy';
-      }, 2000);
-    });
-  }
-
-  function setLoading(on) {
-    document.getElementById('loader').classList.toggle('visible', on);
-    document.getElementById('convert-btn').disabled = on;
-    document.getElementById('convert-btn').textContent = on ? 'Fetching…' : 'Convert';
-  }
-
-  function hideResult() {
-    document.getElementById('result-card').classList.remove('visible');
-  }
-
-  function showError(msg) {
-    const box = document.getElementById('error-box');
-    box.textContent = '⚠ ' + msg;
-    box.classList.add('visible');
-  }
-
-  function hideError() {
-    document.getElementById('error-box').classList.remove('visible');
-  }
-
-  function escHtml(str) {
-    return String(str)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
+  return d.toFixed(2);
+}
+function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 </script>
 </body>
 </html>
