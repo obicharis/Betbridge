@@ -1,21 +1,27 @@
 {
-  "name": "betbridge",
-  "version": "2.0.0",
-  "description": "Convert betting codes between SportyBet and Stake — with real deeplinks",
+  "name": "betbridge-server",
+  "version": "1.0.0",
+  "description": "Stake.com bet slip → SportyBet booking code converter",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "node-fetch": "^2.7.0",
-    "cors": "^2.8.5"
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.3.1",
+    "fuse.js": "^6.6.2",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.1.4"
   },
   "engines": {
     "node": ">=18.0.0"
   }
 }
+
