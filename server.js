@@ -47,6 +47,7 @@ app.use(
 );
 
 // Serve frontend from /public
+app.set('trust proxy', 1);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─────────────────────────────────────────────
