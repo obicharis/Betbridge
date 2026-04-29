@@ -48,6 +48,7 @@ app.use(
 
 // Serve frontend from /public
 app.set('trust proxy', 1);
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─────────────────────────────────────────────
@@ -90,17 +91,42 @@ function sendError(res, status, message, details = null) {
   return res.status(status).json(body);
 }
 
-function parseStakeBetId(url) {
+/**
+ * Parse any Stake share URL and return { id, type }
+ *
+ * Supported formats:
+ *   /sports/bet-slip/<uuid>                          → type: 'slip'
+ *   ?betslipId=<uuid>                                → type: 'slip'
+ *   ?iid=sport%3A<numericId>&modal=bet               → type: 'bet'  (shared from My Bets)
+ *   Raw numeric / alphanumeric ID string             → type: 'bet'
+ */
+function parseStakeBetId(raw) {
+  // Try parsing as URL first
   try {
-    const u = new URL(url);
-    // Format 1: /sports/bet-slip/<id>
-    const pathMatch = u.pathname.match(/bet-slip\/([a-zA-Z0-9_-]+)/i);
-    if (pathMatch) return pathMatch[1];
-    // Format 2: ?betslipId=<id>  or  ?betslip=<id>
-    return u.searchParams.get('betslipId') || u.searchParams.get('betslip') || null;
+    const u = new URL(raw);
+
+    // Format: /sports/bet-slip/<id>
+    const slipPath = u.pathname.match(/bet-slip\/([a-zA-Z0-9_-]+)/i);
+    if (slipPath) return { id: slipPath[1], type: 'slip' };
+
+    // Format: ?betslipId=<id>
+    const slipParam = u.searchParams.get('betslipId') || u.searchParams.get('betslip');
+    if (slipParam) return { id: slipParam, type: 'slip' };
+
+    // Format: ?iid=sport%3A571991279&modal=bet  (decoded: iid=sport:571991279)
+    const iid = u.searchParams.get('iid');
+    if (iid) {
+      const numMatch = iid.match(/sport[:%]3A(\d+)|sport:(\d+)|^(\d+)$/i);
+      if (numMatch) return { id: numMatch[1] || numMatch[2] || numMatch[3], type: 'bet' };
+    }
   } catch {
-    return null;
+    // Not a URL — treat raw string as a bet ID
   }
+
+  // Raw numeric ID (e.g. "571991279")
+  if (/^\d+$/.test(raw.trim())) return { id: raw.trim(), type: 'bet' };
+
+  return null;
 }
 
 // ─────────────────────────────────────────────
@@ -109,42 +135,23 @@ function parseStakeBetId(url) {
 
 const STAKE_GQL_URL = 'https://stake.com/_api/graphql';
 
-// Query for a publicly shared bet slip
+// Query for a bet slip shared via /bet-slip/<uuid>
 const BET_SLIP_QUERY = `
   query BetSlip($id: String!) {
     betSlip(id: $id) {
-      id
-      active
-      currency
-      amount
-      payout
-      isCashout
+      id active currency amount payout isCashout
       bets {
-        id
-        active
-        odds
-        amount
-        payout
-        status
+        id active odds amount payout status
         outcome {
-          id
-          name
-          active
+          id name active
           market {
-            id
-            name
-            active
+            id name active
             game {
-              id
-              name
-              slug
-              active
-              startTime
-              status
+              id name slug active startTime status
               homeTeam { id name }
               awayTeam { id name }
-              league { id name country { id name code } }
-              sport  { id name slug }
+              league   { id name country { id name code } }
+              sport    { id name slug }
             }
           }
         }
@@ -153,24 +160,85 @@ const BET_SLIP_QUERY = `
   }
 `;
 
-async function fetchStakeSlip(betId) {
-  const resp = await http.post(
-    STAKE_GQL_URL,
-    { operationName: 'BetSlip', variables: { id: betId }, query: BET_SLIP_QUERY },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Origin:  'https://stake.com',
-        Referer: 'https://stake.com/',
-      },
+// Query for a single sport bet by numeric ID (shared via ?iid=sport:xxx)
+const SPORT_BET_QUERY = `
+  query SportBet($id: String!) {
+    sportBet(id: $id) {
+      id active currency amount payout isCashout
+      odds
+      payoutMultiplier
+      outcomes {
+        id name active odds
+        market {
+          id name active
+          game {
+            id name slug active startTime status
+            homeTeam { id name }
+            awayTeam { id name }
+            league   { id name country { id name code } }
+            sport    { id name slug }
+          }
+        }
+      }
     }
-  );
+  }
+`;
 
-  if (resp.data?.errors?.length) {
-    const msg = resp.data.errors[0]?.message || 'GraphQL error from Stake';
-    throw new Error(msg);
+const GQL_HEADERS = {
+  'Content-Type': 'application/json',
+  Origin:  'https://stake.com',
+  Referer: 'https://stake.com/',
+};
+
+/** Normalise a sportBet response into the same shape as betSlip */
+function normaliseSportBet(bet) {
+  const bets = (bet.outcomes || []).map(oc => ({
+    id:     oc.id,
+    active: oc.active,
+    odds:   oc.odds,
+    status: bet.active ? 'active' : 'settled',
+    outcome: {
+      id:     oc.id,
+      name:   oc.name,
+      active: oc.active,
+      market: oc.market,
+    },
+  }));
+
+  return {
+    id:       bet.id,
+    active:   bet.active,
+    currency: bet.currency,
+    amount:   bet.amount,
+    payout:   bet.payout,
+    bets,
+  };
+}
+
+async function fetchStakeSlip({ id, type }) {
+  if (type === 'bet') {
+    // Try sportBet query first
+    const resp = await http.post(
+      STAKE_GQL_URL,
+      { operationName: 'SportBet', variables: { id: String(id) }, query: SPORT_BET_QUERY },
+      { headers: GQL_HEADERS }
+    );
+    const bet = resp.data?.data?.sportBet;
+    if (bet) return normaliseSportBet(bet);
+
+    // Some older IDs may only exist on betSlip query — fall through
+    const errors = resp.data?.errors;
+    if (errors?.length) throw new Error(errors[0]?.message || 'GraphQL error from Stake');
+    throw new Error('Bet not found. It may be private or the ID is invalid.');
   }
 
+  // type === 'slip'
+  const resp = await http.post(
+    STAKE_GQL_URL,
+    { operationName: 'BetSlip', variables: { id: String(id) }, query: BET_SLIP_QUERY },
+    { headers: GQL_HEADERS }
+  );
+  if (resp.data?.errors?.length) throw new Error(resp.data.errors[0]?.message || 'GraphQL error');
   const slip = resp.data?.data?.betSlip;
   if (!slip) throw new Error('Bet slip not found or is private');
   return slip;
@@ -308,16 +376,14 @@ app.get('/health', (_req, res) => {
  */
 app.get('/api/stake/slip/:id', async (req, res) => {
   const { id } = req.params;
-  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
-    return sendError(res, 400, 'Invalid bet slip ID');
-  }
-
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) return sendError(res, 400, 'Invalid bet slip ID');
+  // Numeric ID = shared bet; alphanumeric = bet slip UUID
+  const type = /^\d+$/.test(id) ? 'bet' : 'slip';
   try {
-    const slip = await fetchStakeSlip(id);
+    const slip = await fetchStakeSlip({ id, type });
     res.json({ ok: true, slip });
   } catch (err) {
-    const status = err.response?.status || 502;
-    sendError(res, status, err.message, err.response?.data);
+    sendError(res, err.response?.status || 502, err.message, err.response?.data);
   }
 });
 
@@ -394,26 +460,26 @@ app.post('/api/sportybet/bookingcode', async (req, res) => {
 app.post('/api/convert', async (req, res) => {
   const { stakeUrl, country = 'ng' } = req.body;
 
-  // ── 1. Validate input ──────────────────────
-  if (!stakeUrl) return sendError(res, 400, 'Missing body field: stakeUrl');
+  if (!stakeUrl) return sendError(res, 400, 'Missing field: stakeUrl');
 
-  const betId = parseStakeBetId(stakeUrl);
-  if (!betId) {
-    return sendError(
-      res, 400,
-      'Could not extract a bet slip ID from the URL. ' +
-      'Expected: https://stake.com/sports/bet-slip/<id>'
+  const parsed = parseStakeBetId(stakeUrl);
+  if (!parsed) {
+    return sendError(res, 400,
+      'Could not extract a bet ID. Accepted formats:\n' +
+      '• https://stake.com/sports/bet-slip/<id>\n' +
+      '• https://stake.com/sports/home?iid=sport%3A<id>&modal=bet\n' +
+      '• Raw numeric bet ID (e.g. 571991279)'
     );
   }
 
   // ── 2. Fetch Stake slip ────────────────────
   let slip;
   try {
-    slip = await fetchStakeSlip(betId);
+    slip = await fetchStakeSlip(parsed);
   } catch (err) {
     return sendError(
       res, 502,
-      `Failed to fetch Stake bet slip: ${err.message}`,
+      `Failed to fetch Stake bet: ${err.message}`,
       err.response?.data
     );
   }
@@ -511,7 +577,7 @@ app.post('/api/convert', async (req, res) => {
     unmatchedCount,
     selections,
     meta: {
-      stakeSlipId:  betId,
+      stakeSlipId: parsed.id, stakeIdType: parsed.type,
       stakeCurrency: slip.currency,
       country,
     },
@@ -542,3 +608,4 @@ app.listen(PORT, () => {
   console.log(`  📡  Proxying: Stake.com GraphQL  →  SportyBet API`);
   console.log(`  ENV: ${process.env.NODE_ENV || 'development'}\n`);
 });
+
