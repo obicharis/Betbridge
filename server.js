@@ -185,9 +185,15 @@ const SPORT_BET_QUERY = `
 `;
 
 const GQL_HEADERS = {
-  'Content-Type': 'application/json',
-  Origin:  'https://stake.com',
-  Referer: 'https://stake.com/',
+  'Content-Type':    'application/json',
+  'Origin':          'https://stake.com',
+  'Referer':         'https://stake.com/',
+  'app-name':        'web',
+  'x-language':      'en',
+  'x-stake-country': 'cw',
+  'Accept':          'application/json, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Cache-Control':   'no-cache',
 };
 
 /** Normalise a sportBet response into the same shape as betSlip */
@@ -217,19 +223,20 @@ function normaliseSportBet(bet) {
 
 async function fetchStakeSlip({ id, type }) {
   if (type === 'bet') {
-    // Try sportBet query first
+    // Stake's sportBet query wants the full "sport:ID" prefixed string
+    const fullId = String(id).startsWith('sport:') ? String(id) : `sport:${id}`;
+
     const resp = await http.post(
       STAKE_GQL_URL,
-      { operationName: 'SportBet', variables: { id: String(id) }, query: SPORT_BET_QUERY },
+      { operationName: 'SportBet', variables: { id: fullId }, query: SPORT_BET_QUERY },
       { headers: GQL_HEADERS }
     );
-    const bet = resp.data?.data?.sportBet;
-    if (bet) return normaliseSportBet(bet);
 
-    // Some older IDs may only exist on betSlip query — fall through
-    const errors = resp.data?.errors;
-    if (errors?.length) throw new Error(errors[0]?.message || 'GraphQL error from Stake');
-    throw new Error('Bet not found. It may be private or the ID is invalid.');
+    if (resp.data?.data?.sportBet) return normaliseSportBet(resp.data.data.sportBet);
+
+    const gqlErr = resp.data?.errors?.[0]?.message;
+    if (gqlErr) throw new Error(gqlErr);
+    throw new Error('Bet not found. It may be private or require a Stake account to view.');
   }
 
   // type === 'slip'
@@ -365,6 +372,30 @@ async function createSportyBookingCode(country, selectionsStr) {
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
+
+// ── Debug: raw Stake API response ──────────
+// GET /api/debug-stake?id=571991279&type=bet
+app.get('/api/debug-stake', async (req, res) => {
+  const { id, type = 'bet' } = req.query;
+  if (!id) return res.status(400).json({ error: 'Missing id' });
+  try {
+    const fullId = type === 'bet'
+      ? (String(id).startsWith('sport:') ? String(id) : `sport:${id}`)
+      : String(id);
+    const query  = type === 'bet' ? SPORT_BET_QUERY : BET_SLIP_QUERY;
+    const opName = type === 'bet' ? 'SportBet'      : 'BetSlip';
+    const resp   = await http.post(
+      STAKE_GQL_URL,
+      { operationName: opName, variables: { id: fullId }, query },
+      { headers: GQL_HEADERS }
+    );
+    res.json({ sentId: fullId, status: resp.status, body: resp.data });
+  } catch (err) {
+    res.status(502).json({ error: err.message, response: err.response?.data, status: err.response?.status });
+  }
+});
+
+
 
 // ── /api/stake ─────────────────────────────
 
@@ -608,4 +639,3 @@ app.listen(PORT, () => {
   console.log(`  📡  Proxying: Stake.com GraphQL  →  SportyBet API`);
   console.log(`  ENV: ${process.env.NODE_ENV || 'development'}\n`);
 });
-
